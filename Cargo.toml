@@ -1,0 +1,8 @@
+[package]
+name = "lark"
+version = "0.1.0"
+authors = ["Tyler Saunders"]
+edition = "2021"
+
+[dependencies]
+if_chain = "1.0.2"
