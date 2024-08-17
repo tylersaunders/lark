@@ -1,9 +1,11 @@
-mod fen;
 mod boardstate;
 pub mod defs;
+mod fen;
 mod material;
 
 use std::fmt::Display;
+
+use defs::{Side, Square, BB_SQUARES, PIECE_VALUES};
 
 use crate::{
     board::boardstate::BoardState,
@@ -38,7 +40,6 @@ impl Board {
         self.bb_side[Sides::WHITE] = pieces_per_side_bitboards.0;
         self.bb_side[Sides::BLACK] = pieces_per_side_bitboards.1;
 
-
         let material = material::count_material(&self);
         self.state.material[Sides::WHITE] = material.0;
         self.state.material[Sides::BLACK] = material.1;
@@ -59,6 +60,32 @@ impl Board {
         }
 
         (bb_white, bb_black)
+    }
+
+    /// Place a piece on the board.
+    ///
+    /// This will update the material count in [`BoardState`].
+    ///
+    /// * `side`: The [`Sides`] that owns the piece, must be oneof WHITE or BLACK.
+    /// * `piece`: The [`Pieces`] type to place.
+    /// * `square`: The [`Squares`] to place the piece on.
+    pub fn put_piece(&mut self, side: Side, piece: usize, square: Square) {
+        self.bb_pieces[side][piece] |= BB_SQUARES[square];
+        self.bb_side[side] |= BB_SQUARES[square];
+        self.state.material[side] += PIECE_VALUES[piece];
+    }
+
+    /// Remove a piece from the board.
+    ///
+    /// This will update the material count in [`BoardState`].
+    ///
+    /// * `side`: The [`Sides`] that owns the piece, must be oneof WHITE or BLACK.
+    /// * `piece`: The [`Pieces`] type to remove.
+    /// * `square`: The [`Squares`] to remove the piece from.
+    pub fn remove_piece(&mut self, side: Side, piece: usize, square: Square) {
+        self.bb_pieces[side][piece] ^= BB_SQUARES[square];
+        self.bb_side[side] ^= BB_SQUARES[square];
+        self.state.material[side] -= PIECE_VALUES[piece]
     }
 }
 
@@ -84,5 +111,140 @@ impl Display for Board {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use defs::{Pieces, Ranks, Squares, BB_RANKS};
+
+    use super::*;
+
+    #[test]
+    fn test_board_new_makes_empty_board() {
+        let board = Board::new();
+        assert_eq!(board.bb_side[Sides::WHITE], 0);
+        assert_eq!(board.bb_side[Sides::BLACK], 0);
+
+        let bb_w = board.bb_pieces[Sides::WHITE];
+        let bb_b = board.bb_pieces[Sides::BLACK];
+
+        for (w, b) in bb_w.iter().zip(bb_b.iter()) {
+            assert_eq!(*w, 0);
+            assert_eq!(*b, 0);
+        }
+    }
+
+    #[test]
+    fn test_board_init() {
+        // Create a new board and manually set up the normal starting position.
+        let mut board = Board::new();
+
+        // Pawns
+        board.bb_pieces[Sides::WHITE][Pieces::PAWN] |= BB_RANKS[Ranks::R2];
+        board.bb_pieces[Sides::BLACK][Pieces::PAWN] |= BB_RANKS[Ranks::R7];
+
+        // Rooks
+        board.bb_pieces[Sides::WHITE][Pieces::ROOK] |= Squares::bb_of(&[Squares::A1, Squares::H1]);
+        board.bb_pieces[Sides::BLACK][Pieces::ROOK] |= Squares::bb_of(&[Squares::A8, Squares::H8]);
+
+        // Knights
+        board.bb_pieces[Sides::WHITE][Pieces::KNIGHT] |= Squares::bb_of(&[Squares::B1, Squares::G1]);
+        board.bb_pieces[Sides::BLACK][Pieces::KNIGHT] |= Squares::bb_of(&[Squares::B8, Squares::G8]);
+
+        // Bishops
+        board.bb_pieces[Sides::WHITE][Pieces::BISHOP] |= Squares::bb_of(&[Squares::C1, Squares::F1]);
+        board.bb_pieces[Sides::BLACK][Pieces::BISHOP] |= Squares::bb_of(&[Squares::C8, Squares::F8]);
+
+        // Queens
+        board.bb_pieces[Sides::WHITE][Pieces::QUEEN] |= BB_SQUARES[Squares::D1];
+        board.bb_pieces[Sides::BLACK][Pieces::QUEEN] |= BB_SQUARES[Squares::D8];
+
+        // Kings
+        board.bb_pieces[Sides::WHITE][Pieces::KING] |= BB_SQUARES[Squares::E1];
+        board.bb_pieces[Sides::BLACK][Pieces::KING] |= BB_SQUARES[Squares::E8];
+
+        board.init();
+
+        // Total material for the standard starting position is 3900
+        assert_eq!(board.state.material[Sides::WHITE], 3900);
+        assert_eq!(board.state.material[Sides::BLACK], 3900);
+
+        // Ranks 1-2 and 7-8 should be completely full of pieces after init()
+        assert_eq!(
+            board.bb_side[Sides::WHITE] & BB_RANKS[Ranks::R1],
+            BB_RANKS[Ranks::R1]
+        );
+        assert_eq!(
+            board.bb_side[Sides::WHITE] & BB_RANKS[Ranks::R2],
+            BB_RANKS[Ranks::R2]
+        );
+        assert_eq!(
+            board.bb_side[Sides::BLACK] & BB_RANKS[Ranks::R7],
+            BB_RANKS[Ranks::R7]
+        );
+        assert_eq!(
+            board.bb_side[Sides::BLACK] & BB_RANKS[Ranks::R8],
+            BB_RANKS[Ranks::R8]
+        );
+    }
+
+    #[test]
+    fn test_board_put_piece() {
+        let mut board = Board::new();
+
+        // Add a piece for white.
+        assert!(board.bb_pieces[Sides::WHITE][Pieces::QUEEN] & BB_SQUARES[Squares::F1] == 0);
+        board.put_piece(Sides::WHITE, Pieces::QUEEN,Squares::F1);
+        assert!(board.bb_pieces[Sides::WHITE][Pieces::QUEEN] & BB_SQUARES[Squares::F1] > 0);
+
+        assert_eq!(board.state.material[Sides::WHITE], PIECE_VALUES[Pieces::QUEEN]);
+
+        // Add a piece for black.
+        assert!(board.bb_pieces[Sides::BLACK][Pieces::ROOK] & BB_SQUARES[Squares::H1] == 0);
+        board.put_piece(Sides::BLACK, Pieces::ROOK,Squares::H1);
+        assert!(board.bb_pieces[Sides::BLACK][Pieces::ROOK] & BB_SQUARES[Squares::H1] > 0);
+
+        assert_eq!(board.state.material[Sides::BLACK], PIECE_VALUES[Pieces::ROOK]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_board_put_piece_invalid_side(){
+        let mut board = Board::new();
+        board.put_piece(Sides::BOTH, Pieces::QUEEN,Squares::F1);
+    }
+
+    #[test]
+    fn test_board_remove_piece() {
+        let mut board = Board::new();
+
+        // Add a piece for white.
+        board.bb_pieces[Sides::WHITE][Pieces::QUEEN] |= BB_SQUARES[Squares::F1];
+
+        // Add a piece for black.
+        board.bb_pieces[Sides::BLACK][Pieces::ROOK] |= BB_SQUARES[Squares::H1];
+
+        board.init();
+
+        assert_eq!(board.state.material[Sides::WHITE], PIECE_VALUES[Pieces::QUEEN]);
+        assert_eq!(board.state.material[Sides::BLACK], PIECE_VALUES[Pieces::ROOK]);
+
+        board.remove_piece(Sides::WHITE, Pieces::QUEEN, Squares::F1);
+        board.remove_piece(Sides::BLACK, Pieces::ROOK, Squares::H1);
+
+        assert_eq!(board.state.material[Sides::WHITE], 0);
+        assert_eq!(board.state.material[Sides::BLACK], 0);
+        assert_eq!(board.bb_side[Sides::WHITE], 0);
+        assert_eq!(board.bb_side[Sides::BLACK], 0);
+
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_board_remove_piece_invalid_side(){
+        let mut board = Board::new();
+        board.remove_piece(Sides::BOTH, Pieces::QUEEN,Squares::F1);
     }
 }
