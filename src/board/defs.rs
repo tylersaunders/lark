@@ -1,6 +1,7 @@
-use std::{u8, usize};
+use std::{ops::RangeInclusive, u8, usize};
 
 pub type BitBoard = u64;
+pub type Piece = usize;
 pub type Square = usize;
 pub type Side = usize;
 
@@ -15,6 +16,14 @@ pub const BB_RANKS: TBBRanks = init_bb_ranks();
 pub const BB_SQUARES: TBBSquares = init_bb_squares();
 pub const MAX_MOVE_RULE: u8 = 100;
 pub const MAX_GAME_MOVES: u16 = 2048;
+
+pub const PIECE_CHAR_CAPS: [&str; NrOf::PIECE_TYPES + 1] = ["K", "Q", "R", "B", "N", "P", "_"];
+pub const PIECE_CHAR_SMALL: [&str; NrOf::PIECE_TYPES + 1] = ["k", "q", "r", "b", "n", "p", ""];
+
+pub struct RangeOf;
+impl RangeOf {
+    pub const SQUARES: RangeInclusive<Square> = 0..=63;
+}
 
 pub struct NrOf;
 impl NrOf {
@@ -204,12 +213,13 @@ const fn init_bb_squares() -> TBBSquares {
 /// piece type, or to look up the value of a piece in [`PIECE_VALUES`]
 pub struct Pieces;
 impl Pieces {
-    pub const PAWN: usize = 0;
-    pub const BISHOP: usize = 1;
-    pub const KNIGHT: usize = 2;
-    pub const ROOK: usize = 3;
-    pub const QUEEN: usize = 4;
-    pub const KING: usize = 5;
+    pub const KING: Piece = 0;
+    pub const QUEEN: Piece = 1;
+    pub const ROOK: Piece = 2;
+    pub const BISHOP: Piece = 3;
+    pub const KNIGHT: Piece = 4;
+    pub const PAWN: Piece = 5;
+    pub const NONE: Piece = 6;
 }
 
 /// These can be indexed with the value from [`Pieces`] to get the value of an individual piece
@@ -219,4 +229,4 @@ impl Pieces {
 /// PAWN" by using a value like 10 or 50 rather than 0.1 or 0.5.
 ///
 /// ex. let v = PIECE_VALUES[Pieces::QUEEN]
-pub const PIECE_VALUES: [u16; 6] = [100, 300, 300, 500, 900, 0];
+pub const PIECE_VALUES: [u16; NrOf::PIECE_TYPES] = [0, 900, 500, 300, 300, 100];
