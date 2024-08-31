@@ -10,7 +10,10 @@ use magics::{
 
 use crate::{
     board::{
-        defs::{BitBoard, NrOf, Piece, Pieces, Ranks, Sides, Square, BB_RANKS, BB_SQUARES, EMPTY},
+        defs::{
+            BitBoard, Castling, NrOf, Piece, Pieces, Ranks, Side, Sides, Square, Squares, BB_RANKS,
+            BB_SQUARES, EMPTY,
+        },
         Board,
     },
     utils::bits,
@@ -93,6 +96,7 @@ impl MoveGenerator {
         self.piece(board, Pieces::ROOK, move_list);
         self.piece(board, Pieces::BISHOP, move_list);
         self.pawns(board, move_list);
+        self.castling(board, move_list);
     }
 
     /// Generate all pseudo-legal moves for the particular piece type. This generates
@@ -126,6 +130,90 @@ impl MoveGenerator {
 
             let bb_moves = bb_target & !bb_own_pieces;
             self.add_moves(board, piece, from, bb_moves, list);
+        }
+    }
+
+    pub fn castling(&self, board: &Board, list: &mut Vec<Move>) {
+        let player = board.current_side();
+        let opponent = board.opponent();
+
+        let castle_permissions_white = (board.state.castling & (Castling::WK | Castling::WQ)) > 0;
+        let castle_permissions_black = (board.state.castling & (Castling::BK | Castling::BQ)) > 0;
+
+        let bb_occupancy = board.bb_side[Sides::WHITE] | board.bb_side[Sides::BLACK];
+        let mut bb_king = board.bb_pieces[player][Pieces::KING];
+
+        // If there is no king on the board, don't proceed.
+        // This is not really legal state, but some tests don't always put a king piece on the
+        // board.
+        if bb_king == 0 {
+            return
+        }
+
+        let from = bits::next(&mut bb_king);
+
+        // Generate castling moves for white.
+        if player == Sides::WHITE && castle_permissions_white {
+            // King side
+            if board.state.castling & Castling::WK > 0 {
+                let bb_kingside_blockers = BB_SQUARES[Squares::F1] | BB_SQUARES[Squares::G1];
+                let is_kingside_blocked = (bb_occupancy & bb_kingside_blockers) > 0;
+
+                if !is_kingside_blocked
+                    && !self.square_attacked(board, opponent, Squares::F1)
+                    && !self.square_attacked(board, opponent, Squares::E1)
+                {
+                    let to = BB_SQUARES[from] << 2;
+                    self.add_moves(board, Pieces::KING, from, to, list)
+                }
+            }
+
+            // Queen side
+            if board.state.castling & Castling::WQ > 0 {
+                let bb_queenside_blockers =
+                    BB_SQUARES[Squares::B1] | BB_SQUARES[Squares::C1] | BB_SQUARES[Squares::D1];
+                let is_queenside_blocked = (bb_occupancy & bb_queenside_blockers) > 0;
+
+                if !is_queenside_blocked
+                    && !self.square_attacked(board, opponent, Squares::E1)
+                    && !self.square_attacked(board, opponent, Squares::D1)
+                {
+                    let to = BB_SQUARES[from] >> 2;
+                    self.add_moves(board, Pieces::KING, from, to, list);
+                }
+            }
+        }
+
+        // Generate castling moves for black.
+        if player == Sides::BLACK && castle_permissions_black {
+            // King side
+            if board.state.castling & Castling::BK > 0 {
+                let bb_kingside_blockers = BB_SQUARES[Squares::F8] | BB_SQUARES[Squares::G8];
+                let is_kingside_blocked = (bb_occupancy & bb_kingside_blockers) > 0;
+
+                if !is_kingside_blocked
+                    && !self.square_attacked(board, opponent, Squares::F8)
+                    && !self.square_attacked(board, opponent, Squares::E8)
+                {
+                    let to = BB_SQUARES[from] << 2;
+                    self.add_moves(board, Pieces::KING, from, to, list)
+                }
+            }
+
+            // Queen side
+            if board.state.castling & Castling::BQ > 0 {
+                let bb_queenside_blockers =
+                    BB_SQUARES[Squares::B8] | BB_SQUARES[Squares::C8] | BB_SQUARES[Squares::D8];
+                let is_queenside_blocked = (bb_occupancy & bb_queenside_blockers) > 0;
+
+                if !is_queenside_blocked
+                    && !self.square_attacked(board, opponent, Squares::E8)
+                    && !self.square_attacked(board, opponent, Squares::D8)
+                {
+                    let to = BB_SQUARES[from] >> 2;
+                    self.add_moves(board, Pieces::KING, from, to, list);
+                }
+            }
         }
     }
 
@@ -272,12 +360,42 @@ impl MoveGenerator {
             _ => panic!("Not a sliding piece: {piece}"),
         }
     }
+
+    /// Determines if the given side is attacking the given square.
+    ///
+    /// * `board`: The board to evaluate.
+    /// * `attacker`: The side that is attacking.
+    /// * `square`: The square to check if it is attacked.
+    pub fn square_attacked(&self, board: &Board, attacker: Side, square: Square) -> bool {
+        let attackers = board.bb_pieces[attacker];
+        let bb_occupied = board.bb_side[Sides::WHITE] | board.bb_side[Sides::BLACK];
+
+        // Use the super-piece method: get the moves for each piece, starting from the given
+        // square. This provides the squares where a piece has to be, to be able to reach the given
+        // square.
+        let bb_king = self.get_non_slider_attacks(Pieces::KING, square);
+        let bb_rook = self.get_slider_attacks(Pieces::ROOK, square, bb_occupied);
+        let bb_bishop = self.get_slider_attacks(Pieces::BISHOP, square, bb_occupied);
+        let bb_knight = self.get_non_slider_attacks(Pieces::KNIGHT, square);
+        let bb_pawns = self.pawns[attacker ^ 1][square];
+        let bb_queen = bb_rook | bb_bishop;
+
+        // Then determine if such a piece is actually there: see if a rook is on one of the squares
+        // a rook has to be on to reach the given square. Same for queen, knight, etc. As soon as
+        // any pieces are found, the square can be considered attacked.
+        (bb_king & attackers[Pieces::KING] > 0)
+            || (bb_rook & attackers[Pieces::ROOK] > 0)
+            || (bb_bishop & attackers[Pieces::BISHOP] > 0)
+            || (bb_queen & attackers[Pieces::QUEEN] > 0)
+            || (bb_knight & attackers[Pieces::KNIGHT] > 0)
+            || (bb_pawns & attackers[Pieces::PAWN] > 0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::board::{
-        defs::{Pieces, Sides, Squares},
+        defs::{Castling, Pieces, Sides, Square, Squares},
         Board,
     };
 
@@ -395,6 +513,242 @@ mod tests {
 
         // By now expected_sq should be empty.
         assert_eq!(expected_sq.len(), 0);
+    }
+
+    #[test]
+    fn test_generate_castling_moves_white() {
+        let mut board = Board::new();
+        board.state.castling = Castling::WK | Castling::WQ;
+
+        board.put_piece(Sides::WHITE, Pieces::KING, Squares::E1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::H1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::A1);
+
+        board.state.active_side = Sides::WHITE as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(destinations.contains(&Squares::C1));
+        assert!(destinations.contains(&Squares::G1));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_white_no_permissions() {
+        let mut board = Board::new();
+        board.state.castling = 0;
+
+        board.put_piece(Sides::WHITE, Pieces::KING, Squares::E1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::H1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::A1);
+
+        board.state.active_side = Sides::WHITE as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C1));
+        assert!(!destinations.contains(&Squares::G1));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_white_kingside_attacker() {
+        let mut board = Board::new();
+        board.state.castling = Castling::WK | Castling::WQ;
+
+        board.put_piece(Sides::WHITE, Pieces::KING, Squares::E1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::H1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::A1);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::F8);
+
+        board.state.active_side = Sides::WHITE as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(destinations.contains(&Squares::C1));
+        assert!(!destinations.contains(&Squares::G1));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_white_queenside_attacker() {
+        let mut board = Board::new();
+        board.state.castling = Castling::WK | Castling::WQ;
+
+        board.put_piece(Sides::WHITE, Pieces::KING, Squares::E1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::H1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::A1);
+        board.put_piece(Sides::BLACK, Pieces::QUEEN, Squares::D8);
+
+        board.state.active_side = Sides::WHITE as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C1));
+        assert!(destinations.contains(&Squares::G1));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_white_king_in_check() {
+        let mut board = Board::new();
+        board.state.castling = Castling::WK | Castling::WQ;
+
+        board.put_piece(Sides::WHITE, Pieces::KING, Squares::E1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::H1);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::A1);
+        board.put_piece(Sides::BLACK, Pieces::QUEEN, Squares::E8);
+
+        board.state.active_side = Sides::WHITE as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C1));
+        assert!(!destinations.contains(&Squares::G1));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_black() {
+        let mut board = Board::new();
+        board.state.castling = Castling::BK | Castling::BQ;
+
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::E8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::H8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::A8);
+
+        board.state.active_side = Sides::BLACK as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(destinations.contains(&Squares::C8));
+        assert!(destinations.contains(&Squares::G8));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_black_kingside_attacker() {
+        let mut board = Board::new();
+        board.state.castling = Castling::BK | Castling::BQ;
+
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::E8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::H8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::A8);
+        board.put_piece(Sides::WHITE, Pieces::ROOK, Squares::F1);
+
+        board.state.active_side = Sides::BLACK as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(destinations.contains(&Squares::C8));
+        assert!(!destinations.contains(&Squares::G8));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_black_queenside_attacker() {
+        let mut board = Board::new();
+        board.state.castling = Castling::BK | Castling::BQ;
+
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::E8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::H8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::A8);
+        board.put_piece(Sides::WHITE, Pieces::QUEEN, Squares::D1);
+
+        board.state.active_side = Sides::BLACK as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C8));
+        assert!(destinations.contains(&Squares::G8));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_black_king_in_check() {
+        let mut board = Board::new();
+        board.state.castling = Castling::BK | Castling::BQ;
+
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::E8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::H8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::A8);
+        board.put_piece(Sides::WHITE, Pieces::QUEEN, Squares::E1);
+
+        board.state.active_side = Sides::BLACK as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C8));
+        assert!(!destinations.contains(&Squares::G8));
+    }
+
+    #[test]
+    fn test_generate_castling_moves_black_no_permissions() {
+        let mut board = Board::new();
+        board.state.castling = 0;
+
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::E8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::H8);
+        board.put_piece(Sides::BLACK, Pieces::ROOK, Squares::A8);
+
+        board.state.active_side = Sides::BLACK as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        // Discard all non-king moves.
+        move_list.retain(|mv| mv.piece() == Pieces::KING);
+        let destinations: Vec<Square> = move_list.iter().map(|mv| mv.to()).collect();
+
+        assert!(!destinations.contains(&Squares::C8));
+        assert!(!destinations.contains(&Squares::G8));
     }
 
     fn generate_king_moves(side: usize) {
