@@ -1,7 +1,12 @@
 use std::vec;
 mod init;
+pub mod magics;
 
 use defs::{Move, Shift};
+use magics::{
+    Magic, BISHOP_TABLE_SIZE, PRECALC_BISHOP_MAGIC_NUMBERS, PRECALC_ROOK_MAGIC_NUMBERS,
+    ROOK_TABLE_SIZE,
+};
 
 use crate::{
     board::{
@@ -22,14 +27,18 @@ const PROMOTION_PIECES: [usize; 4] = [Pieces::QUEEN, Pieces::ROOK, Pieces::BISHO
 /// * `king`: The king's attack table.
 /// * `knight`: The knight's attack table.
 /// * `pawns`: The pawn's attack table.
-/// * `rook`: TODO: Magic numbers table.
-/// * `bishop`: TODO Magic numbers table.
+/// * `rook`: The rook's attack table.
+/// * `bishop`: The bishop's attack table.
+/// * `rook_magics`: The per square Rook Magic numbers.
+/// * `bishop_magics`: The per square Bishop Magic numbers.
 pub struct MoveGenerator {
     king: [BitBoard; NrOf::SQUARES],
     knight: [BitBoard; NrOf::SQUARES],
     pawns: [[BitBoard; NrOf::SQUARES]; Sides::BOTH],
     rook: Vec<BitBoard>,
     bishop: Vec<BitBoard>,
+    rook_magics: [Magic; NrOf::SQUARES],
+    bishop_magics: [Magic; NrOf::SQUARES],
 }
 
 impl MoveGenerator {
@@ -41,14 +50,35 @@ impl MoveGenerator {
             king: [EMPTY; NrOf::SQUARES],
             knight: [EMPTY; NrOf::SQUARES],
             pawns: [[EMPTY; NrOf::SQUARES]; Sides::BOTH],
-            // TODO: replace with rook table squares
-            rook: vec![EMPTY; NrOf::SQUARES],
-            // TODO: replace with bishop table squares
-            bishop: vec![EMPTY; NrOf::SQUARES],
+            rook: vec![EMPTY; ROOK_TABLE_SIZE],
+            bishop: vec![EMPTY; BISHOP_TABLE_SIZE],
+            rook_magics: [Magic::default(); NrOf::SQUARES],
+            bishop_magics: [Magic::default(); NrOf::SQUARES],
         };
         mg.init_king();
         mg.init_knight();
         mg.init_pawns();
+        mg.init_magics_with_precalc(PRECALC_ROOK_MAGIC_NUMBERS, PRECALC_BISHOP_MAGIC_NUMBERS);
+        mg
+    }
+
+    /// Create and initialize a new [`MoveGenerator`].
+    ///
+    /// This will calculate new magic numbers for the sliding attack tables.
+    pub fn new_find_magics() -> Self {
+        let mut mg = Self {
+            king: [EMPTY; NrOf::SQUARES],
+            knight: [EMPTY; NrOf::SQUARES],
+            pawns: [[EMPTY; NrOf::SQUARES]; Sides::BOTH],
+            rook: vec![EMPTY; ROOK_TABLE_SIZE],
+            bishop: vec![EMPTY; BISHOP_TABLE_SIZE],
+            rook_magics: [Magic::default(); NrOf::SQUARES],
+            bishop_magics: [Magic::default(); NrOf::SQUARES],
+        };
+        mg.init_king();
+        mg.init_knight();
+        mg.init_pawns();
+        mg.init_magics();
         mg
     }
 
@@ -59,6 +89,9 @@ impl MoveGenerator {
     pub fn generate_moves(&self, board: &Board, move_list: &mut Vec<Move>) {
         self.piece(board, Pieces::KING, move_list);
         self.piece(board, Pieces::KNIGHT, move_list);
+        self.piece(board, Pieces::QUEEN, move_list);
+        self.piece(board, Pieces::ROOK, move_list);
+        self.piece(board, Pieces::BISHOP, move_list);
         self.pawns(board, move_list);
     }
 
@@ -84,8 +117,10 @@ impl MoveGenerator {
         while bb_pieces > 0 {
             let from = bits::next(&mut bb_pieces);
             let bb_target = match piece {
-                Pieces::KING => self.get_non_slider_attacks(piece, from),
-                Pieces::KNIGHT => self.get_non_slider_attacks(piece, from),
+                Pieces::KING | Pieces::KNIGHT => self.get_non_slider_attacks(piece, from),
+                Pieces::QUEEN | Pieces::ROOK | Pieces::BISHOP => {
+                    self.get_slider_attacks(piece, from, bb_occupied)
+                }
                 _ => panic!("Not a piece: {piece}"),
             };
 
@@ -213,6 +248,30 @@ impl MoveGenerator {
             _ => panic!("Not a king or a knight: {piece}"),
         }
     }
+
+    /// Get the attacks table for the sliding piece.
+    ///
+    /// * `piece`: must be a BISHOP, ROOK or QUEEN, or this function will panic.
+    /// * `square`: The square the piece is currently attacking from.
+    /// * `occupancy`: The current occupied squares on the board, for both sides.
+    fn get_slider_attacks(&self, piece: Piece, square: Square, occupancy: BitBoard) -> BitBoard {
+        match piece {
+            Pieces::ROOK => {
+                let index = self.rook_magics[square].get_index(occupancy);
+                self.rook[index]
+            }
+            Pieces::BISHOP => {
+                let index = self.bishop_magics[square].get_index(occupancy);
+                self.bishop[index]
+            }
+            Pieces::QUEEN => {
+                let r_index = self.rook_magics[square].get_index(occupancy);
+                let b_index = self.bishop_magics[square].get_index(occupancy);
+                self.rook[r_index] ^ self.bishop[b_index]
+            }
+            _ => panic!("Not a sliding piece: {piece}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -248,11 +307,29 @@ mod tests {
         king_moves_edge_of_board_white: generate_king_moves_edge_of_board, Sides::WHITE;
         knight_moves_white: generate_knight_moves, Sides::WHITE;
         knight_moves_edge_of_board_white: generate_knight_moves_edge_of_board, Sides::WHITE;
+        rook_moves_white: generate_rook_moves, Sides::WHITE;
+        rook_moves_with_collisions_white: generate_rook_moves_with_collisions, Sides::WHITE;
+        rook_moves_with_captures_white: generate_rook_moves_with_captures, Sides::WHITE;
+        bishop_moves_white: generate_bishop_moves, Sides::WHITE;
+        bishop_moves_with_collisions_white: generate_bishop_moves_with_collisions, Sides::WHITE;
+        bishop_moves_with_captures_white: generate_bishop_moves_with_captures, Sides::WHITE;
+        queen_moves_white: generate_queen_moves, Sides::WHITE;
+        queen_moves_with_collisions_white: generate_queen_moves_with_collisions, Sides::WHITE;
+        queen_moves_with_captures_white: generate_queen_moves_with_captures, Sides::WHITE;
 
         king_moves_black: generate_king_moves, Sides::BLACK;
         king_moves_edge_of_board_black: generate_king_moves_edge_of_board, Sides::BLACK;
         knight_moves_black: generate_knight_moves, Sides::BLACK;
         knight_moves_edge_of_board_black: generate_knight_moves_edge_of_board, Sides::BLACK;
+        rook_moves_black: generate_rook_moves, Sides::BLACK;
+        rook_moves_with_collisions_black: generate_rook_moves_with_collisions, Sides::BLACK;
+        rook_moves_with_captures_black: generate_rook_moves_with_captures, Sides::BLACK;
+        bishop_moves_black: generate_bishop_moves, Sides::BLACK;
+        bishop_moves_with_collisions_black: generate_bishop_moves_with_collisions, Sides::BLACK;
+        bishop_moves_with_captures_black: generate_bishop_moves_with_captures, Sides::BLACK;
+        queen_moves_black: generate_queen_moves, Sides::BLACK;
+        queen_moves_with_collisions_black: generate_queen_moves_with_collisions, Sides::BLACK;
+        queen_moves_with_captures_black: generate_queen_moves_with_captures, Sides::BLACK;
     }
 
     // Need to manually test pawns for each side since they move in different directions and
@@ -344,6 +421,399 @@ mod tests {
 
         for mv in move_list {
             assert_eq!(mv.from(), Squares::D4);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_rook_moves(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::ROOK, Squares::B2);
+        board.state.active_side = side as u8;
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::A2,
+            Squares::C2,
+            Squares::D2,
+            Squares::E2,
+            Squares::F2,
+            Squares::G2,
+            Squares::H2,
+            Squares::B1,
+            Squares::B3,
+            Squares::B4,
+            Squares::B5,
+            Squares::B6,
+            Squares::B7,
+            Squares::B8,
+        ]);
+
+        // There should be 14 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::B2);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_rook_moves_with_collisions(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::ROOK, Squares::A1);
+        board.put_piece(side, Pieces::KING, Squares::A6);
+        board.put_piece(side, Pieces::KNIGHT, Squares::C1);
+        board.state.active_side = side as u8;
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::B1,
+            Squares::A2,
+            Squares::A3,
+            Squares::A4,
+            Squares::A5,
+        ]);
+
+        // Keep only the moves for the rook.
+        move_list.retain(|mv| mv.piece() == Pieces::ROOK);
+
+        // There should be 5 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::A1);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_rook_moves_with_captures(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::ROOK, Squares::A1);
+
+        board.state.active_side = side as u8;
+
+        board.put_piece(board.opponent(), Pieces::KING, Squares::A6);
+        board.put_piece(board.opponent(), Pieces::KNIGHT, Squares::C1);
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::B1,
+            Squares::C1,
+            Squares::A2,
+            Squares::A3,
+            Squares::A4,
+            Squares::A5,
+            Squares::A6,
+        ]);
+
+        // Keep only the moves for the rook.
+        move_list.retain(|mv| mv.piece() == Pieces::ROOK);
+
+        // There should be 7 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::A1);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_bishop_moves(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::BISHOP, Squares::B2);
+        board.state.active_side = side as u8;
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::A1,
+            Squares::A3,
+            Squares::C1,
+            Squares::C3,
+            Squares::D4,
+            Squares::E5,
+            Squares::F6,
+            Squares::G7,
+            Squares::H8,
+        ]);
+
+        // There should be 9 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::B2);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_bishop_moves_with_collisions(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::BISHOP, Squares::D4);
+        board.put_piece(side, Pieces::KING, Squares::B2);
+        board.put_piece(side, Pieces::KNIGHT, Squares::B6);
+        board.state.active_side = side as u8;
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::C3,
+            Squares::C5,
+            Squares::E3,
+            Squares::E5,
+            Squares::F2,
+            Squares::F6,
+            Squares::G1,
+            Squares::G7,
+            Squares::H8,
+        ]);
+
+        // Keep only the moves for the bishop.
+        move_list.retain(|mv| mv.piece() == Pieces::BISHOP);
+
+        // There should be 9 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::D4);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_bishop_moves_with_captures(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::BISHOP, Squares::A1);
+
+        board.state.active_side = side as u8;
+
+        board.put_piece(board.opponent(), Pieces::KING, Squares::F6);
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            Squares::B2,
+            Squares::C3,
+            Squares::D4,
+            Squares::E5,
+            Squares::F6,
+        ]);
+
+        // Keep only the moves for the bishop.
+        move_list.retain(|mv| mv.piece() == Pieces::BISHOP);
+
+        // There should be 5 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::A1);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_queen_moves(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::QUEEN, Squares::B2);
+        board.state.active_side = side as u8;
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            // Diagonals
+            Squares::A1,
+            Squares::A3,
+            Squares::C1,
+            Squares::C3,
+            Squares::D4,
+            Squares::E5,
+            Squares::F6,
+            Squares::G7,
+            Squares::H8,
+            // Horizontal
+            Squares::A2,
+            Squares::C2,
+            Squares::D2,
+            Squares::E2,
+            Squares::F2,
+            Squares::G2,
+            Squares::H2,
+            // Vertical
+            Squares::B1,
+            Squares::B3,
+            Squares::B4,
+            Squares::B5,
+            Squares::B6,
+            Squares::B7,
+            Squares::B8,
+        ]);
+
+        // There should be 23 total moves
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::B2);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_queen_moves_with_collisions(side: usize) {
+        let mut board = Board::new();
+
+        board.put_piece(side, Pieces::QUEEN, Squares::B2);
+        board.put_piece(side, Pieces::KING, Squares::F6);
+
+        board.state.active_side = side as u8;
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            // Diagonals
+            Squares::A1,
+            Squares::A3,
+            Squares::C1,
+            Squares::C3,
+            Squares::D4,
+            Squares::E5,
+            // Horizontal
+            Squares::A2,
+            Squares::C2,
+            Squares::D2,
+            Squares::E2,
+            Squares::F2,
+            Squares::G2,
+            Squares::H2,
+            // Vertical
+            Squares::B1,
+            Squares::B3,
+            Squares::B4,
+            Squares::B5,
+            Squares::B6,
+            Squares::B7,
+            Squares::B8,
+        ]);
+
+        // Keep just the queen's moves.
+        move_list.retain(|mv| mv.piece() == Pieces::QUEEN);
+
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::B2);
+            assert!(expected_sq.contains(&mv.to()));
+
+            // Remove the square from the expected_sq
+            expected_sq.retain(|&x| x != mv.to());
+        }
+
+        // By now expected_sq should be empty.
+        assert_eq!(expected_sq.len(), 0);
+    }
+
+    fn generate_queen_moves_with_captures(side: usize) {
+        let mut board = Board::new();
+        board.put_piece(side, Pieces::QUEEN, Squares::B2);
+
+        board.state.active_side = side as u8;
+
+        board.put_piece(board.opponent(), Pieces::KING, Squares::F6);
+
+        let mg = MoveGenerator::new();
+        let mut move_list: Vec<Move> = Vec::new();
+        mg.generate_moves(&board, &mut move_list);
+
+        let mut expected_sq = Vec::from([
+            // Diagonals
+            Squares::A1,
+            Squares::A3,
+            Squares::C1,
+            Squares::C3,
+            Squares::D4,
+            Squares::E5,
+            Squares::F6,
+            // Horizontal
+            Squares::A2,
+            Squares::C2,
+            Squares::D2,
+            Squares::E2,
+            Squares::F2,
+            Squares::G2,
+            Squares::H2,
+            // Vertical
+            Squares::B1,
+            Squares::B3,
+            Squares::B4,
+            Squares::B5,
+            Squares::B6,
+            Squares::B7,
+            Squares::B8,
+        ]);
+
+        // Keep just the queen's moves.
+        move_list.retain(|mv| mv.piece() == Pieces::QUEEN);
+
+        assert_eq!(move_list.len(), expected_sq.len());
+
+        for mv in move_list {
+            assert_eq!(mv.from(), Squares::B2);
             assert!(expected_sq.contains(&mv.to()));
 
             // Remove the square from the expected_sq

@@ -2,6 +2,12 @@ use std::fmt::Display;
 
 use crate::board::defs::{BitBoard, Piece, Square, PIECE_CHAR_SMALL, SQUARE_NAME};
 
+// A list of BitBoard that represent possible attacks.
+pub type AttackBoards = Vec<BitBoard>;
+
+// A list of BitBoard that represent possible collisions/blockers.
+pub type BlockerBoards = Vec<BitBoard>;
+
 /*
 Move format explanation
 
@@ -128,6 +134,19 @@ impl Display for Move {
             SQUARE_NAME[self.to()]
         )
     }
+}
+
+// This enum holds the direction in which a ray of a slider piece can point.
+#[derive(Copy, Clone)]
+pub enum Direction {
+    North,
+    East,
+    South,
+    West,
+    NorthWest,
+    NorthEast,
+    SouthEast,
+    SouthWest,
 }
 
 /// A helper struct that contains methods for shifting A bitboard in a Compass Rose cardinal

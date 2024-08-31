@@ -5,6 +5,9 @@ pub type Piece = usize;
 pub type Square = usize;
 pub type Side = usize;
 
+/// A coordinate of (File, Rank)
+pub type Coordinate = (u8, u8);
+
 // Initialize arrays with bitboards for each file, rank and square.
 type TBBFiles = [BitBoard; NrOf::FILES];
 type TBBRanks = [BitBoard; NrOf::RANKS];
