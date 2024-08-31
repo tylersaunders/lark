@@ -11,7 +11,8 @@ pub fn evaluate_position(board: &Board) -> i16 {
     let side = board.state.active_side as usize;
 
     // Start by calculating the evaluation from White's point of view.
-    let mut value: i16 = (board.state.material[Sides::WHITE] - board.state.material[Sides::BLACK])
+    let mut value: i16 = ((board.state.material[Sides::WHITE]) as i16
+        - (board.state.material[Sides::BLACK]) as i16)
         .try_into()
         .unwrap();
 
@@ -20,4 +21,3 @@ pub fn evaluate_position(board: &Board) -> i16 {
 
     value
 }
-
