@@ -133,6 +133,10 @@ impl MoveGenerator {
         }
     }
 
+    /// Generate all castling moves for the current side.
+    ///
+    /// * `board`: The current board.
+    /// * `list`: The current move list.
     pub fn castling(&self, board: &Board, list: &mut Vec<Move>) {
         let player = board.current_side();
         let opponent = board.opponent();
