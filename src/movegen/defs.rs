@@ -79,12 +79,12 @@ impl Move {
 
     /// 6 bits
     pub fn from(&self) -> Square {
-        ((self.data >> Shift::FROM_SQ as u64) & 0b111111) as Piece
+        ((self.data >> Shift::FROM_SQ as u64) & 0b111111) as Square
     }
 
     /// 6 bits
     pub fn to(&self) -> Square {
-        ((self.data >> Shift::TO_SQ as u64) & 0b111111) as Piece
+        ((self.data >> Shift::TO_SQ as u64) & 0b111111) as Square
     }
 
     /// 3 bits
@@ -98,23 +98,23 @@ impl Move {
     }
 
     /// 1 bit
-    pub fn en_passant(&self) -> Piece {
-        ((self.data >> Shift::EN_PASSANT as u64) & 0b1) as Piece
+    pub fn en_passant(&self) -> bool {
+        ((self.data >> Shift::EN_PASSANT as u64) & 0b1) as u8 == 1
     }
 
     /// 1 bit
-    pub fn double_step(&self) -> Piece {
-        ((self.data >> Shift::DOUBLE_STEP as u64) & 0b1) as Piece
+    pub fn double_step(&self) -> bool {
+        ((self.data >> Shift::DOUBLE_STEP as u64) & 0b1) as u8 == 1
     }
 
     /// 1 bit
-    pub fn castling(&self) -> Piece {
-        ((self.data >> Shift::CASTLING as u64) & 0b1) as Piece
+    pub fn castling(&self) -> bool {
+        ((self.data >> Shift::CASTLING as u64) & 0b1) as u8 == 1
     }
 
     /// 32 bits
-    pub fn get_sort_score(&self) -> Piece {
-        ((self.data >> Shift::SORTSCORE as u64) & 0xFFFFFFFF) as Piece
+    pub fn get_sort_score(&self) -> u32 {
+        ((self.data >> Shift::SORTSCORE as u64) & 0xFFFFFFFF) as u32
     }
 
     pub fn set_sort_score(&mut self, value: u32) {
