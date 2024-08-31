@@ -3,9 +3,9 @@ pub mod defs;
 mod fen;
 mod material;
 
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
-use defs::{Piece, Side, Square, BB_SQUARES, PIECE_CHAR_CAPS, PIECE_VALUES, SQUARE_NAME};
+use defs::{Piece, Pieces, Side, Square, Squares, BB_SQUARES, PIECE_CHAR_CAPS, PIECE_CHAR_SMALL, PIECE_VALUES, SQUARE_NAME};
 
 use crate::{
     board::boardstate::BoardState,
@@ -53,6 +53,40 @@ impl Board {
     /// The side opposite the side to play.
     pub fn opponent(&self) -> usize {
         (self.state.active_side ^ 1) as usize
+    }
+
+    /// Get the piece and owner on the given square.
+    ///
+    /// Will always return [`Pieces::NONE`] when no piece is on the square.
+    /// Otherwise, will return the Piece type and side that owns the piece.
+    ///
+    /// * `square`: The square to check for a piece.
+    pub fn get_piece_on_square(&self, square: Square) -> Result<(Piece, Side), Piece> {
+        let bb_square = BB_SQUARES[square];
+        let is_square_occupied_white = self.bb_side[Sides::WHITE] & bb_square > 0;
+        let is_square_occupied_black = self.bb_side[Sides::BLACK] & bb_square > 0;
+
+        if is_square_occupied_white {
+            for (piece, bb_piece) in self.bb_pieces[Sides::WHITE].iter().enumerate() {
+                let exists = bb_square & bb_piece > 0;
+                match exists {
+                    true => return Ok((piece, Sides::WHITE)),
+                    false => continue,
+                }
+            }
+        }
+
+        if is_square_occupied_black {
+            for (piece, bb_piece) in self.bb_pieces[Sides::BLACK].iter().enumerate() {
+                let exists = bb_square & bb_piece > 0;
+                match exists {
+                    true => return Ok((piece, Sides::BLACK)),
+                    false => continue,
+                }
+            }
+        }
+
+        Err(Pieces::NONE)
     }
 
     /// Moves a piece from one [`Square`] to another.
@@ -122,24 +156,32 @@ impl Board {
 
 impl Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bitboard: u64 = self.bb_side[Sides::WHITE] | self.bb_side[Sides::BLACK];
-        const LAST_BIT: u64 = 63;
-
         writeln!(f, "==========================")?;
         writeln!(f, "          l  a  r  k      ")?;
-        for rank in 0..8 {
+        for rank in (0..8).rev() {
             writeln!(f)?;
-            write!(f, "{} |", 8 - rank)?;
-            for file in (0..8).rev() {
-                if file == 7 {
+
+            // Write the Rank number
+            write!(f, "{} |", rank + 1)?;
+
+            for file in 0..8 {
+                if file == 0 {
                     write!(f, " ")?;
                 }
-                let mask = 1u64 << (LAST_BIT - (rank * 8) - file);
-                let char = if bitboard & mask != 0 { '1' } else { '0' };
+                let char = match self.get_piece_on_square((rank * 8 + file) as usize) {
+                    Err(e) => "-",
+                    Ok((piece, side)) => {
+                        match side {
+                            Sides::WHITE => PIECE_CHAR_CAPS[piece],
+                            Sides::BLACK => PIECE_CHAR_SMALL[piece],
+                            _ => panic!("invalid side")
+                        }
+                    }
+                };
                 write!(f, "{char:3}")?;
             }
 
-            if rank == 7 {
+            if rank == 0 {
                 writeln!(f)?;
             }
         }
