@@ -293,6 +293,47 @@ mod tests {
     }
 
     #[test]
+    fn test_get_piece_at_square_white_queen() {
+        let mut board = Board::new();
+        board.put_piece(Sides::WHITE, Pieces::QUEEN, Squares::F1);
+
+        let (piece, side) = match board.get_piece_on_square(Squares::F1) {
+            Err(_) => panic!("Unexpected NONE returned."),
+            Ok((piece,side)) => (piece, side),
+
+        };
+
+        assert_eq!(piece, Pieces::QUEEN);
+        assert_eq!(side, Sides::WHITE);
+    }
+
+    #[test]
+    fn test_get_piece_at_square_none() {
+        let board = Board::new();
+        let piece = match board.get_piece_on_square(Squares::F1) {
+            Err(piece) => piece,
+            Ok(_) => panic!("Unexpected piece returned"),
+        };
+
+        assert_eq!(piece, Pieces::NONE);
+    }
+
+    #[test]
+    fn test_get_piece_at_square_black_king() {
+        let mut board = Board::new();
+        board.put_piece(Sides::BLACK, Pieces::KING, Squares::G1);
+
+        let (piece, side) = match board.get_piece_on_square(Squares::G1) {
+            Err(_) => panic!("Unexpected NONE returned."),
+            Ok((piece,side)) => (piece, side),
+
+        };
+
+        assert_eq!(piece, Pieces::KING);
+        assert_eq!(side, Sides::BLACK);
+    }
+
+    #[test]
     fn test_board_put_piece() {
         let mut board = Board::new();
 
