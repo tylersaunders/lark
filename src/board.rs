@@ -3,9 +3,12 @@ pub mod defs;
 mod fen;
 mod material;
 
-use std::{error::Error, fmt::Display};
+use std::fmt::Display;
 
-use defs::{Piece, Pieces, Side, Square, Squares, BB_SQUARES, PIECE_CHAR_CAPS, PIECE_CHAR_SMALL, PIECE_VALUES, SQUARE_NAME};
+use defs::{
+    Coordinate, Piece, Pieces, Side, Square, BB_SQUARES, PIECE_CHAR_CAPS, PIECE_CHAR_SMALL,
+    PIECE_VALUES, SQUARE_NAME,
+};
 
 use crate::{
     board::boardstate::BoardState,
@@ -89,6 +92,15 @@ impl Board {
         Err(Pieces::NONE)
     }
 
+    /// Retrieve the [`Coordinate`] for the given square.
+    ///
+    /// * `square`: The square to get a coordinate for.
+    pub fn get_square_coordinate(square: Square) -> Coordinate {
+        let file = (square % 8) as u8; // square mod 8
+        let rank = (square / 8) as u8; // square div 8
+        (file, rank)
+    }
+
     /// Moves a piece from one [`Square`] to another.
     ///
     /// WARNING: This function will panic if the piece does not exist.
@@ -169,14 +181,12 @@ impl Display for Board {
                     write!(f, " ")?;
                 }
                 let char = match self.get_piece_on_square((rank * 8 + file) as usize) {
-                    Err(e) => "-",
-                    Ok((piece, side)) => {
-                        match side {
-                            Sides::WHITE => PIECE_CHAR_CAPS[piece],
-                            Sides::BLACK => PIECE_CHAR_SMALL[piece],
-                            _ => panic!("invalid side")
-                        }
-                    }
+                    Err(_) => "-",
+                    Ok((piece, side)) => match side {
+                        Sides::WHITE => PIECE_CHAR_CAPS[piece],
+                        Sides::BLACK => PIECE_CHAR_SMALL[piece],
+                        _ => panic!("invalid side"),
+                    },
                 };
                 write!(f, "{char:3}")?;
             }
@@ -299,8 +309,7 @@ mod tests {
 
         let (piece, side) = match board.get_piece_on_square(Squares::F1) {
             Err(_) => panic!("Unexpected NONE returned."),
-            Ok((piece,side)) => (piece, side),
-
+            Ok((piece, side)) => (piece, side),
         };
 
         assert_eq!(piece, Pieces::QUEEN);
@@ -325,8 +334,7 @@ mod tests {
 
         let (piece, side) = match board.get_piece_on_square(Squares::G1) {
             Err(_) => panic!("Unexpected NONE returned."),
-            Ok((piece,side)) => (piece, side),
-
+            Ok((piece, side)) => (piece, side),
         };
 
         assert_eq!(piece, Pieces::KING);

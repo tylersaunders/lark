@@ -45,6 +45,8 @@ impl Sides {
 
 // Bit Location of All Squares on the board.
 pub struct Squares;
+
+#[allow(dead_code)]
 impl Squares {
     pub const A1: Square = 0;
     pub const B1: Square = 1;
@@ -139,6 +141,7 @@ pub const SQUARE_NAME: [&str; NrOf::SQUARES] = [
 ];
 
 pub struct Files;
+#[allow(dead_code)]
 impl Files {
     pub const A: usize = 0;
     pub const B: usize = 1;
@@ -151,6 +154,7 @@ impl Files {
 }
 
 pub struct Ranks;
+#[allow(dead_code)]
 impl Ranks {
     pub const R1: usize = 0;
     pub const R2: usize = 1;
@@ -163,6 +167,7 @@ impl Ranks {
 }
 
 pub struct Castling;
+#[allow(dead_code)]
 impl Castling {
     pub const WK: u8 = 1;
     pub const WQ: u8 = 2;

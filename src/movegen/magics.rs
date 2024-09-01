@@ -124,7 +124,7 @@ impl MoveGenerator {
     ///
     /// * `square`: The square the rook is on.
     pub fn rook_mask(square: Square) -> BitBoard {
-        let coordinate = Board::square_on_file_rank(square);
+        let coordinate = Board::get_square_coordinate(square);
         let bb_rook_square = BB_SQUARES[square];
         let bb_edges = MoveGenerator::edges_without_piece(coordinate);
         let bb_mask = BB_FILES[coordinate.0 as usize] | BB_RANKS[coordinate.1 as usize];
@@ -138,7 +138,7 @@ impl MoveGenerator {
     ///
     /// * `square`: The square the bishop is on.
     pub fn bishop_mask(square: Square) -> BitBoard {
-        let coordinate = Board::square_on_file_rank(square);
+        let coordinate = Board::get_square_coordinate(square);
         let bb_edges = MoveGenerator::edges_without_piece(coordinate);
         let bb_up_left = MoveGenerator::bb_ray(0, square, Direction::NorthWest);
         let bb_up_right = MoveGenerator::bb_ray(0, square, Direction::NorthEast);
@@ -235,8 +235,8 @@ impl MoveGenerator {
     /// * `square`: The square to start the ray from.
     /// * `direction`: The direction the ray should be cast in.
     pub fn bb_ray(bb_in: BitBoard, square: Square, direction: Direction) -> BitBoard {
-        let mut file = Board::square_on_file_rank(square).0 as usize;
-        let mut rank = Board::square_on_file_rank(square).1 as usize;
+        let mut file = Board::get_square_coordinate(square).0 as usize;
+        let mut rank = Board::get_square_coordinate(square).1 as usize;
         let mut bb_square = BB_SQUARES[square];
         let mut bb_ray = 0;
         let mut done = false;
@@ -318,13 +318,6 @@ impl MoveGenerator {
     }
 }
 
-impl Board {
-    pub fn square_on_file_rank(square: Square) -> Coordinate {
-        let file = (square % 8) as u8; // square mod 8
-        let rank = (square / 8) as u8; // square div 8
-        (file, rank)
-    }
-}
 
 /// Generates magic numbers & attack tables for valid pieces. (Rooks, Bishops)
 ///

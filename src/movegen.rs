@@ -109,12 +109,8 @@ impl MoveGenerator {
     /// * `list`: the move list to append all pseudo-legal moves.
     pub fn piece(&self, board: &Board, piece: Piece, list: &mut Vec<Move>) {
         let player = board.current_side();
-        let opponent = board.opponent();
         let bb_occupied = board.bb_side[Sides::WHITE] | board.bb_side[Sides::BLACK];
-        let bb_empty = !bb_occupied;
-
         let bb_own_pieces = board.bb_side[player];
-        let bb_opponent_pieces = board.bb_side[opponent];
 
         let mut bb_pieces = board.bb_pieces[player][piece];
 
